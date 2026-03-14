@@ -46,3 +46,9 @@ npm run dev
 ## 开源协议
 
 本项目基于 [MIT License](LICENSE) 开源。
+
+## 项目截图
+
+![项目截图](./public/Snipaste_2026-03-14_13-04-18.png)
+![项目截图](./public/Snipaste_2026-03-14_13-06-03.png)
+![项目截图](./public/Snipaste_2026-03-14_13-06-10.png)
