@@ -1,3 +1,7 @@
+/**
+ * 体彩数据
+ * 来源  https://m.lottery.gov.cn/mkjdlt/
+ */
 export const list = [
   {
     lotteryGameName: '超级大乐透',

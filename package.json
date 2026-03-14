@@ -1,19 +1,11 @@
 {
-  "name": "my-vue-app",
+  "name": "sports-lottery",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint --ext .js,.jsx,.ts,.tsx,.vue src",
-    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,vue}\"",
-    "lint:fix": "npm run lint -- --fix",
-    "cmd": "start cmd /C  nvm use 22",
-    "pow": "Start-Process powershell -ArgumentList '-Command nvm use 22' -Verb RunAs",
-    "cmd:all": "npm run cmd && npm run dev",
-    "pow:all": "npm run pow && npm run dev"
+    "dev": "vite"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
