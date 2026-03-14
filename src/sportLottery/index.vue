@@ -1,6 +1,6 @@
 <template>
   <div class="sport-lottery-container">
-    <h2>体彩数据分析</h2>
+    <h2>数据分析</h2>
 
     <div class="filter-section">
       <el-form :inline="true">
@@ -39,7 +39,7 @@
           <el-button type="primary" @click="handleFilter">筛选</el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
-        <el-form-item label="最近" style="margin-bottom: 0; margin-left: 10px">
+        <el-form-item style="margin-bottom: 0; margin-left: 10px">
           <el-button-group>
             <el-button size="default" :type="activeQuickCount === 20 ? 'primary' : ''" @click="handleQuickFilter(20)">
               20期
@@ -53,9 +53,60 @@
           </el-button-group>
         </el-form-item>
       </el-form>
+
+      <div class="anchor-nav">
+        <span class="anchor-nav__label">快速定位</span>
+        <el-button-group class="anchor-nav__group">
+          <el-button
+            v-for="item in anchorItems"
+            :key="item.key"
+            size="small"
+            :type="activeAnchor === item.key ? 'primary' : 'default'"
+            @click="scrollToSection(item.key)">
+            {{ item.label }}
+          </el-button>
+        </el-button-group>
+      </div>
     </div>
 
-    <div class="summary-section">
+    <div :ref="(el) => setSectionRef('recommend-number', el)" class="summary-section">
+      <div class="section-header">
+        <h3>
+          <el-icon><icon-ep-magic-stick /></el-icon>
+          <span style="margin-left: 8px">推荐号码</span>
+        </h3>
+      </div>
+      <div class="recommend-note">根据当前筛选区间的号码频次与当前遗漏综合生成 5 组参考号码，仅供分析使用。</div>
+      <div v-if="listFormat.length" class="recommend-grid">
+        <div v-for="group in recommendedGroups" :key="group.label" class="recommend-card">
+          <div class="recommend-card__header">
+            <span class="recommend-card__title">{{ group.label }}</span>
+            <el-button
+              type="primary"
+              text
+              bg
+              size="small"
+              class="recommend-copy-btn"
+              @click="copyRecommendGroup(group)">
+              <el-icon><icon-ep-document-copy /></el-icon>
+              <span style="margin-left: 4px">复制</span>
+            </el-button>
+          </div>
+          <div class="recommend-balls">
+            <span v-for="ball in group.front" :key="`${group.label}-front-${ball}`" class="ball ball-blue">
+              {{ ball }}
+            </span>
+            <span class="recommend-separator">+</span>
+            <span v-for="ball in group.back" :key="`${group.label}-back-${ball}`" class="ball ball-red">
+              {{ ball }}
+            </span>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="暂无可生成的推荐号码" :image-size="96" />
+    </div>
+
+    <div :ref="(el) => setSectionRef('blue-summary', el)" class="summary-section">
       <div class="section-header">
         <h3>
           <el-icon><icon-ep-histogram /></el-icon>
@@ -80,7 +131,7 @@
       </div>
     </div>
 
-    <div class="summary-section">
+    <div :ref="(el) => setSectionRef('blue-chart', el)" class="summary-section">
       <h3>
         <el-icon><icon-ep-trend-charts /></el-icon>
         <span style="margin-left: 8px">前区蓝球频次折线图</span>
@@ -89,7 +140,7 @@
       <div ref="blueChartEl" class="chart" />
     </div>
 
-    <div class="summary-section">
+    <div :ref="(el) => setSectionRef('red-summary', el)" class="summary-section">
       <div class="section-header">
         <h3>
           <el-icon><icon-ep-histogram /></el-icon>
@@ -114,7 +165,7 @@
       </div>
     </div>
 
-    <div class="summary-section">
+    <div :ref="(el) => setSectionRef('red-chart', el)" class="summary-section">
       <h3>
         <el-icon><icon-ep-trend-charts /></el-icon>
         <span style="margin-left: 8px">后区红球频次折线图</span>
@@ -123,7 +174,15 @@
       <div ref="redChartEl" class="chart" />
     </div>
 
-    <div class="list-section">
+    <div :ref="(el) => setSectionRef('structure-analysis', el)" class="summary-section">
+      <NumberStructureAnalysis :records="listFormat" />
+    </div>
+
+    <div :ref="(el) => setSectionRef('trend-analysis', el)" class="summary-section">
+      <TrendAnalysis :records="listFormat" />
+    </div>
+
+    <div :ref="(el) => setSectionRef('history-list', el)" class="list-section">
       <h3 style="margin-bottom: 8px">
         <el-icon><icon-ep-list /></el-icon>
         <span style="margin-left: 8px">历史开奖数据</span>
@@ -136,7 +195,7 @@
         :data="listFormat"
         stripe
         style="width: 100%"
-        height="400"
+        height="600"
         border
         :header-cell-style="{ background: '#f5f7fa' }">
         <el-table-column prop="lotteryDrawNum" label="期号" width="120" align="center" sortable fixed />
@@ -159,9 +218,64 @@
   </div>
 </template>
 
-<script setup>
+<script setup name="SportLottery">
 import * as echarts from 'echarts'
 import { list } from './data'
+import NumberStructureAnalysis from './components/NumberStructureAnalysis.vue'
+import TrendAnalysis from './components/TrendAnalysis.vue'
+
+/**
+ * 当前激活的锚点，用于高亮按钮状态。
+ * @type {import('vue').Ref<string>}
+ */
+const activeAnchor = ref('recommend-number')
+/**
+ * 页面锚点导航配置。
+ */
+const anchorItems = [
+  { key: 'recommend-number', label: '推荐号码' },
+  { key: 'blue-summary', label: '前区频次' },
+  { key: 'blue-chart', label: '前区图表' },
+  { key: 'red-summary', label: '后区频次' },
+  { key: 'red-chart', label: '后区图表' },
+  { key: 'structure-analysis', label: '号码结构' },
+  { key: 'trend-analysis', label: '号码走势' },
+  { key: 'history-list', label: '历史数据' },
+]
+
+/**
+ * 页面各区块的 DOM 引用。
+ * 使用对象存储，便于通过 key 直接找到对应标题区域。
+ * @type {Record<string, HTMLElement | null>}
+ */
+const sectionRefs = reactive({})
+
+/**
+ * 注册区块 DOM 引用。
+ * @param {string} key 锚点标识
+ * @param {Element | null} el 对应的 DOM 元素
+ */
+const setSectionRef = (key, el) => {
+  sectionRefs[key] = el instanceof HTMLElement ? el : null
+}
+
+/**
+ * 使用 DOM 原生滚动方法，将目标区块平滑滚动到视口中间位置。
+ * @param {string} key 锚点标识
+ */
+const scrollToSection = async (key) => {
+  activeAnchor.value = key
+  await nextTick()
+
+  const target = sectionRefs[key]
+  if (!target) return
+
+  target.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'nearest',
+  })
+}
 
 /**
  * 筛选输入框：起始期号（用户输入）
@@ -272,6 +386,144 @@ const listFormat = computed(() => {
     return match
   })
 })
+
+/**
+ * 统计指定号码区间的频次与当前遗漏，并生成综合评分。
+ * 评分越高，表示该号码在当前筛选区间内越活跃，且近期遗漏相对更明显。
+ *
+ * @param {{ total: number, start: number, end: number }} params 区间配置
+ * @returns {Array<{ code: string, frequency: number, omission: number, score: number }>}
+ */
+const buildRecommendStats = ({ total, start, end }) => {
+  const codes = Array.from({ length: total }, (_, index) => String(index + 1).padStart(2, '0'))
+  const frequencyMap = Object.fromEntries(codes.map((code) => [code, 0]))
+  const omissionMap = Object.fromEntries(codes.map((code) => [code, 0]))
+
+  listFormat.value.forEach((record) => {
+    record.lotteryDrawResult.slice(start, end).forEach((ball) => {
+      if (frequencyMap[ball] !== undefined) frequencyMap[ball] += 1
+    })
+  })
+
+  codes.forEach((code) => {
+    let omission = 0
+
+    for (const record of listFormat.value) {
+      const hit = record.lotteryDrawResult.slice(start, end).includes(code)
+      if (hit) break
+      omission += 1
+    }
+
+    omissionMap[code] = omission
+  })
+
+  const maxFrequency = Math.max(...Object.values(frequencyMap), 1)
+  const maxOmission = Math.max(...Object.values(omissionMap), 1)
+
+  return codes
+    .map((code) => {
+      const frequency = frequencyMap[code]
+      const omission = omissionMap[code]
+      const score = Number(((frequency / maxFrequency) * 0.65 + (omission / maxOmission) * 0.35).toFixed(4))
+
+      return {
+        code,
+        frequency,
+        omission,
+        score,
+      }
+    })
+    .sort((a, b) => b.score - a.score || b.frequency - a.frequency || Number(a.code) - Number(b.code))
+}
+
+/**
+ * 前区推荐候选池。
+ */
+const frontRecommendStats = computed(() => buildRecommendStats({ total: 35, start: 0, end: 5 }))
+
+/**
+ * 后区推荐候选池。
+ */
+const backRecommendStats = computed(() => buildRecommendStats({ total: 12, start: 5, end: 7 }))
+
+/**
+ * 从候选池中按偏移量取出一组不重复号码。
+ * @param {Array<{ code: string }>} candidates 候选号码池
+ * @param {number} count 需要抽取的号码数量
+ * @param {number} offset 起始偏移
+ * @param {number} step 步长
+ * @returns {string[]}
+ */
+const pickRecommendCodes = (candidates, count, offset, step) => {
+  const picked = []
+  let cursor = offset
+  let attempts = 0
+
+  while (picked.length < count && attempts < candidates.length * 4) {
+    const item = candidates[cursor % candidates.length]
+    if (item && !picked.includes(item.code)) {
+      picked.push(item.code)
+    }
+    cursor += step
+    attempts += 1
+  }
+
+  return picked.sort((a, b) => Number(a) - Number(b))
+}
+
+/**
+ * 推荐号码结果。
+ * 生成 5 组：前区 5 个号码 + 后区 2 个号码。
+ */
+const recommendedGroups = computed(() => {
+  const frontPool = frontRecommendStats.value.slice(0, 18)
+  const backPool = backRecommendStats.value.slice(0, 8)
+
+  return Array.from({ length: 5 }, (_, index) => ({
+    label: `第 ${index + 1} 组`,
+    front: pickRecommendCodes(frontPool, 5, index * 2, 3),
+    back: pickRecommendCodes(backPool, 2, index, 2),
+  }))
+})
+
+/**
+ * 将一组推荐号码格式化为可复制文本。
+ * @param {{ label: string, front: string[], back: string[] }} group 推荐号码组
+ * @returns {string}
+ */
+const formatRecommendGroupText = (group) => {
+  return `${group.front.join(' ')} + ${group.back.join(' ')}`
+}
+
+/**
+ * 复制当前推荐号码。
+ * 优先使用 Clipboard API，若不可用则回退到临时文本域方案。
+ * @param {{ label: string, front: string[], back: string[] }} group 推荐号码组
+ */
+const copyRecommendGroup = async (group) => {
+  const text = formatRecommendGroupText(group)
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', 'readonly')
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    ElMessage.success(`${group.label} 已复制`)
+  } catch (error) {
+    console.error('复制推荐号码失败：', error)
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
 
 /**
  * 前区 1~35 频次统计（key 为 "01".."35"）
@@ -615,6 +867,7 @@ h2 {
   margin-top: 0;
   margin-bottom: 0px; // 移除底部margin
   color: #333;
+  text-align: center;
   // 使标题粘性
   position: sticky;
   top: 0px;
@@ -656,7 +909,7 @@ h3 {
 .list-section {
   background: #fff;
   border-radius: 8px;
-  padding: 20px;
+  padding: 16px;
   margin-bottom: 20px;
   box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.05); // 加深阴影
   border: 1px solid #ebeef5; // 增加细边框
@@ -676,10 +929,87 @@ h3 {
   box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.08); // 吸顶时阴影重一点
 }
 
+.anchor-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #ebeef5;
+}
+
+.anchor-nav__label {
+  font-size: 13px;
+  color: #909399;
+  white-space: nowrap;
+}
+
+.anchor-nav__group {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .summary-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.recommend-note {
+  margin-bottom: 16px;
+  color: #909399;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.recommend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.recommend-card {
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 16px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
+}
+
+.recommend-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.recommend-card__title {
+  color: #303133;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.recommend-copy-btn {
+  flex-shrink: 0;
+}
+
+.recommend-card__desc {
+  color: #909399;
+  font-size: 12px;
+}
+
+.recommend-balls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recommend-separator {
+  margin: 0 2px;
+  color: #909399;
+  font-weight: 700;
 }
 
 .summary-item {
@@ -753,5 +1083,12 @@ h3 {
 .chart {
   width: 100%;
   height: 380px; // 稍微增高
+}
+
+@media (max-width: 768px) {
+  .anchor-nav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>
