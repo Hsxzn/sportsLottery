@@ -8,34 +8,44 @@
           ( 第 {{ periodRange.start }} 期 - 第 {{ periodRange.end }} 期 , 共 {{ records.length }} 期 )
         </span>
       </h3>
-      <div class="trend-toolbar">
-        <el-radio-group v-model="activeArea" size="small">
-          <el-radio-button value="front">前区走势</el-radio-button>
-          <el-radio-button value="back">后区走势</el-radio-button>
-        </el-radio-group>
-      </div>
     </div>
 
     <div v-if="records.length" class="trend-scroll">
       <table class="trend-table">
         <thead>
+          <tr class="area-group-row">
+            <th rowspan="2" class="sticky-col period-col">期号</th>
+            <th :colspan="35" class="area-title front-title">前区走势</th>
+            <th :colspan="12" class="area-title back-title">后区走势</th>
+          </tr>
           <tr>
-            <th class="sticky-col period-col">期号</th>
-            <th v-for="num in activeData.numbers" :key="num" class="number-col">
+            <th v-for="(num, idx) in frontTrendData.numbers" :key="`f-num-${idx}`" class="number-col front-col">
+              {{ num }}
+            </th>
+            <th v-for="(num, idx) in backTrendData.numbers" :key="`b-num-${idx}`" class="number-col back-col">
               {{ num }}
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in activeData.rows" :key="row.period">
+          <tr v-for="row in combinedRows" :key="row.period">
             <td class="sticky-col period-col">
               <div class="period-main">{{ row.period }}</div>
               <div class="period-sub">{{ row.date }}</div>
             </td>
+            <!-- 前区单元格 -->
             <td
-              v-for="cell in row.cells"
-              :key="`${row.period}-${cell.code}`"
-              :class="['trend-cell', cell.hit ? `is-hit ${activeConfig.hitClass}` : 'is-miss']">
+              v-for="(cell, cIndex) in row.frontCells"
+              :key="`f-${row.period}-${cIndex}`"
+              :class="['trend-cell', 'front-col', cell.hit ? `is-hit ${areaConfigMap.front.hitClass}` : 'is-miss']">
+              <span v-if="cell.hit" class="hit-ball">{{ cell.code }}</span>
+              <span v-else class="omit-text">{{ cell.omit }}</span>
+            </td>
+            <!-- 后区单元格 -->
+            <td
+              v-for="(cell, cIndex) in row.backCells"
+              :key="`b-${row.period}-${cIndex}`"
+              :class="['trend-cell', 'back-col', cell.hit ? `is-hit ${areaConfigMap.back.hitClass}` : 'is-miss']">
               <span v-if="cell.hit" class="hit-ball">{{ cell.code }}</span>
               <span v-else class="omit-text">{{ cell.omit }}</span>
             </td>
@@ -44,19 +54,28 @@
         <tfoot>
           <tr>
             <th class="sticky-col period-col">出现次数</th>
-            <td v-for="item in activeData.stats" :key="`freq-${item.code}`" class="footer-cell">
+            <td v-for="(item, idx) in frontTrendData.stats" :key="`f-freq-${idx}`" class="footer-cell front-col">
+              {{ item.frequency }}
+            </td>
+            <td v-for="(item, idx) in backTrendData.stats" :key="`b-freq-${idx}`" class="footer-cell back-col">
               {{ item.frequency }}
             </td>
           </tr>
           <tr>
             <th class="sticky-col period-col">最大遗漏</th>
-            <td v-for="item in activeData.stats" :key="`max-${item.code}`" class="footer-cell">
+            <td v-for="(item, idx) in frontTrendData.stats" :key="`f-max-${idx}`" class="footer-cell front-col">
+              {{ item.maxOmission }}
+            </td>
+            <td v-for="(item, idx) in backTrendData.stats" :key="`b-max-${idx}`" class="footer-cell back-col">
               {{ item.maxOmission }}
             </td>
           </tr>
           <tr>
             <th class="sticky-col period-col">当前遗漏</th>
-            <td v-for="item in activeData.stats" :key="`current-${item.code}`" class="footer-cell">
+            <td v-for="(item, idx) in frontTrendData.stats" :key="`f-cur-${idx}`" class="footer-cell front-col">
+              {{ item.currentOmission }}
+            </td>
+            <td v-for="(item, idx) in backTrendData.stats" :key="`b-cur-${idx}`" class="footer-cell back-col">
               {{ item.currentOmission }}
             </td>
           </tr>
@@ -84,14 +103,6 @@ const props = defineProps({
 })
 
 /**
- * 当前激活的走势区域。
- * - `front`：前区走势（01-35）
- * - `back`：后区走势（01-12）
- * @type {import('vue').Ref<'front' | 'back'>}
- */
-const activeArea = ref('front')
-
-/**
  * 不同区域的基础配置。
  * 用于统一描述：标题、展示范围、号码数量、在开奖结果数组中的切片区间以及命中样式类。
  */
@@ -113,12 +124,6 @@ const areaConfigMap = {
     hitClass: 'back-hit',
   },
 }
-
-/**
- * 当前激活区域对应的配置。
- * 模板层使用它来展示标题、号码范围和命中样式。
- */
-const activeConfig = computed(() => areaConfigMap[activeArea.value])
 
 /**
  * 当前数据区间的起止期号。
@@ -240,11 +245,20 @@ const frontTrendData = computed(() => buildTrendData(props.records, areaConfigMa
 const backTrendData = computed(() => buildTrendData(props.records, areaConfigMap.back))
 
 /**
- * 当前页面实际渲染的数据源。
- * 根据 `activeArea` 在前区/后区走势数据之间切换。
+ * 组合后的走势图行数据，包含了同一期的前区和后区记录。
  */
-const activeData = computed(() => {
-  return activeArea.value === 'front' ? frontTrendData.value : backTrendData.value
+const combinedRows = computed(() => {
+  return frontTrendData.value.rows
+    .map((fRow, index) => {
+      const bRow = backTrendData.value.rows[index]
+      return {
+        period: fRow.period,
+        date: fRow.date,
+        frontCells: fRow.cells,
+        backCells: bRow.cells,
+      }
+    })
+    .reverse()
 })
 </script>
 
@@ -292,8 +306,8 @@ h3 {
 
 .trend-table th,
 .trend-table td {
-  min-width: 38px;
-  height: 38px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
   text-align: center;
   border-right: 1px solid #ebeef5;
@@ -324,7 +338,7 @@ h3 {
 }
 
 .period-col {
-  min-width: 110px !important;
+  min-width: 80px !important;
   padding: 0 8px !important;
 }
 
@@ -337,6 +351,26 @@ h3 {
   margin-top: 2px;
   font-size: 11px;
   color: #909399;
+}
+
+.area-title {
+  padding: 8px 0 !important;
+  font-size: 14px !important;
+  font-weight: bold;
+}
+.front-title {
+  color: #409eff !important;
+  background: #ecf5ff !important;
+  border-right: 2px solid #dcdfe6 !important;
+}
+.back-title {
+  color: #f56c6c !important;
+  background: #fef0f0 !important;
+}
+
+.trend-table th.front-col:last-of-type,
+.trend-table td.front-col:last-of-type {
+  border-right: 2px solid #dcdfe6 !important;
 }
 
 .trend-cell {

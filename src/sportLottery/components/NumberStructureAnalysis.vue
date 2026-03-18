@@ -28,6 +28,19 @@
         :header-cell-style="{ background: '#f5f7fa' }">
         <el-table-column prop="period" label="期号" width="110" align="center" fixed />
         <el-table-column prop="date" label="开奖日期" width="120" align="center" />
+        <el-table-column label="开奖号码" min-width="260" align="center">
+          <template #default="{ row }">
+            <div class="ball-group">
+              <span
+                v-for="(ball, index) in row.drawResult"
+                :key="`${row.period}-${ball}-${index}`"
+                class="ball"
+                :class="{ 'ball-blue': index < 5, 'ball-red': index >= 5 }">
+                {{ ball }}
+              </span>
+            </div>
+          </template>
+        </el-table-column>
 
         <el-table-column label="前区结构" align="center">
           <el-table-column prop="frontOddEven" label="奇偶比" width="100" align="center" />
@@ -157,6 +170,7 @@ const structureRows = computed(() => {
     return {
       period: record.lotteryDrawNum,
       date: record.lotteryDrawTime,
+      drawResult: record.lotteryDrawResult,
       frontOddEven: `${frontOddEven.odd}:${frontOddEven.even}`,
       frontBigSmall: `${frontBigSmall.big}:${frontBigSmall.small}`,
       frontSum: frontNumbers.reduce((sum, num) => sum + num, 0),
@@ -310,6 +324,37 @@ h3 {
 .structure-table-wrap {
   border-radius: 10px;
   overflow: hidden;
+}
+
+.ball-group {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.ball {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: Consolas, Monaco, monospace;
+}
+
+.ball-red {
+  background: linear-gradient(135deg, #f78989, #e74c3c);
+  box-shadow: 0 4px 8px rgba(245, 108, 108, 0.25);
+}
+
+.ball-blue {
+  background: linear-gradient(135deg, #66b1ff, #409eff);
+  box-shadow: 0 4px 8px rgba(64, 158, 255, 0.25);
 }
 
 @media (max-width: 768px) {

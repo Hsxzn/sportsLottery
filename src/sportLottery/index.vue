@@ -74,9 +74,17 @@
         <h3>
           <el-icon><icon-ep-magic-stick /></el-icon>
           <span style="margin-left: 8px">推荐号码</span>
+          <span class="period-range" v-if="periodRange">
+            ( 第 {{ periodRange.start }} 期 - 第 {{ periodRange.end }} 期 , 共 {{ listFormat.length }} 期 )
+          </span>
         </h3>
       </div>
-      <div class="recommend-note">根据当前筛选区间的号码频次与当前遗漏综合生成 5 组参考号码，仅供分析使用。</div>
+      <div class="recommend-note">根据当前筛选区间使用加权随机算法生成 1 组参考号码，仅供分析使用。</div>
+      <div class="recommend-weight-list">
+        <span v-for="item in recommendWeightList" :key="item.key" class="recommend-weight-tag">
+          {{ item.label }} {{ item.weight }}
+        </span>
+      </div>
       <div v-if="listFormat.length" class="recommend-grid">
         <div v-for="group in recommendedGroups" :key="group.label" class="recommend-card">
           <div class="recommend-card__header">
@@ -175,45 +183,13 @@
     </div>
 
     <div :ref="(el) => setSectionRef('structure-analysis', el)" class="summary-section">
-      <NumberStructureAnalysis :records="listFormat" />
+      <!-- 号码结构分析 -->
+      <!-- <NumberStructureAnalysis :records="listFormat" /> -->
     </div>
 
     <div :ref="(el) => setSectionRef('trend-analysis', el)" class="summary-section">
-      <TrendAnalysis :records="listFormat" />
-    </div>
-
-    <div :ref="(el) => setSectionRef('history-list', el)" class="list-section">
-      <h3 style="margin-bottom: 8px">
-        <el-icon><icon-ep-list /></el-icon>
-        <span style="margin-left: 8px">历史开奖数据</span>
-        <span class="period-range" v-if="listFormat.length">
-          ( 第 {{ listFormat[listFormat.length - 1].lotteryDrawNum }} 期 - 第 {{ listFormat[0].lotteryDrawNum }} 期 , 共
-          {{ listFormat.length }} 期 )
-        </span>
-      </h3>
-      <el-table
-        :data="listFormat"
-        stripe
-        style="width: 100%"
-        height="600"
-        border
-        :header-cell-style="{ background: '#f5f7fa' }">
-        <el-table-column prop="lotteryDrawNum" label="期号" width="120" align="center" sortable fixed />
-        <el-table-column prop="lotteryDrawTime" label="开奖时间" width="150" align="center" sortable />
-        <el-table-column label="开奖号码" min-width="300">
-          <template #default="{ row }">
-            <div class="ball-group">
-              <span
-                v-for="(ball, idx) in row.lotteryDrawResult"
-                :key="idx"
-                class="ball"
-                :class="{ 'ball-blue': idx < 5, 'ball-red': idx >= 5 }">
-                {{ ball }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
+      <!-- 开奖号码走势图 -->
+      <TrendAnalysis :records="last50List" />
     </div>
   </div>
 </template>
@@ -224,6 +200,7 @@ import { list } from './data'
 import NumberStructureAnalysis from './components/NumberStructureAnalysis.vue'
 import TrendAnalysis from './components/TrendAnalysis.vue'
 
+// console.log('list', list)
 /**
  * 当前激活的锚点，用于高亮按钮状态。
  * @type {import('vue').Ref<string>}
@@ -240,7 +217,6 @@ const anchorItems = [
   { key: 'red-chart', label: '后区图表' },
   { key: 'structure-analysis', label: '号码结构' },
   { key: 'trend-analysis', label: '号码走势' },
-  { key: 'history-list', label: '历史数据' },
 ]
 
 /**
@@ -299,8 +275,8 @@ const startNum = ref('')
  */
 const endNum = ref('')
 
-// 当前选中的快捷筛选期数（0表示自定义）
-const activeQuickCount = ref(100)
+// 当前选中的快捷筛选期数（0 表示未使用快捷筛选，默认分析全部数据）
+const activeQuickCount = ref(0)
 
 /**
  * 应用筛选条件
@@ -313,10 +289,14 @@ const handleFilter = () => {
 }
 
 /**
- * 重置筛选条件 -> 恢复默认100期
+ * 重置筛选条件 -> 恢复默认全量数据
  */
 const handleReset = () => {
-  handleQuickFilter(100)
+  activeQuickCount.value = 0
+  startNumInput.value = ''
+  endNumInput.value = ''
+  startNum.value = ''
+  endNum.value = ''
 }
 
 /**
@@ -363,12 +343,14 @@ const lotteryNumOptions = computed(() => {
  * @type {Array<{lotteryDrawNum: string, lotteryDrawResult: string[], lotteryDrawTime: string}>}
  */
 const parsedList = list.map((item) => {
+  // console.log('🚀 ~ item:', item.lotteryDrawNum)
   return {
     lotteryDrawNum: item.lotteryDrawNum,
     lotteryDrawResult: item.lotteryDrawResult.split(' '),
     lotteryDrawTime: item.lotteryDrawTime,
   }
 })
+console.log('🚀 ~ parsedList .length :', parsedList.length)
 
 /**
  * 筛选后的开奖列表（支持期号区间）
@@ -388,20 +370,62 @@ const listFormat = computed(() => {
 })
 
 /**
+ * 推荐算法的权重配置。
+ */
+const recommendWeights = {
+  balance: 0.3,
+  frequency: 0.2,
+  recentHeat: 0.3,
+  omission: 0.2,
+}
+
+/**
+ * 页面展示用的权重说明。
+ */
+const recommendWeightList = [
+  { key: 'balance', label: '热冷平衡', weight: '30%' },
+  { key: 'frequency', label: '频次', weight: '20%' },
+  { key: 'recentHeat', label: '短期热度', weight: '30%' },
+  { key: 'omission', label: '当前遗漏', weight: '20%' },
+]
+
+/**
+ * 短期热度统计窗口。
+ * 优先使用最近 20 期；不足时退化为当前筛选区间长度。
+ */
+const recentWindowSize = computed(() => Math.max(1, Math.min(20, listFormat.value.length || 1)))
+
+/**
  * 统计指定号码区间的频次与当前遗漏，并生成综合评分。
- * 评分越高，表示该号码在当前筛选区间内越活跃，且近期遗漏相对更明显。
+ * 评分越高，表示该号码在当前筛选区间内越适合作为加权随机候选。
  *
  * @param {{ total: number, start: number, end: number }} params 区间配置
- * @returns {Array<{ code: string, frequency: number, omission: number, score: number }>}
+ * @returns {Array<{
+ *   code: string,
+ *   frequency: number,
+ *   omission: number,
+ *   recentHeat: number,
+ *   balanceScore: number,
+ *   weightedScore: number
+ * }>}
  */
 const buildRecommendStats = ({ total, start, end }) => {
   const codes = Array.from({ length: total }, (_, index) => String(index + 1).padStart(2, '0'))
   const frequencyMap = Object.fromEntries(codes.map((code) => [code, 0]))
   const omissionMap = Object.fromEntries(codes.map((code) => [code, 0]))
+  const recentFrequencyMap = Object.fromEntries(codes.map((code) => [code, 0]))
+
+  const recentRecords = listFormat.value.slice(0, recentWindowSize.value)
 
   listFormat.value.forEach((record) => {
     record.lotteryDrawResult.slice(start, end).forEach((ball) => {
       if (frequencyMap[ball] !== undefined) frequencyMap[ball] += 1
+    })
+  })
+
+  recentRecords.forEach((record) => {
+    record.lotteryDrawResult.slice(start, end).forEach((ball) => {
+      if (recentFrequencyMap[ball] !== undefined) recentFrequencyMap[ball] += 1
     })
   })
 
@@ -419,21 +443,38 @@ const buildRecommendStats = ({ total, start, end }) => {
 
   const maxFrequency = Math.max(...Object.values(frequencyMap), 1)
   const maxOmission = Math.max(...Object.values(omissionMap), 1)
+  const maxRecentFrequency = Math.max(...Object.values(recentFrequencyMap), 1)
 
   return codes
     .map((code) => {
       const frequency = frequencyMap[code]
       const omission = omissionMap[code]
-      const score = Number(((frequency / maxFrequency) * 0.65 + (omission / maxOmission) * 0.35).toFixed(4))
+      const recentHeat = recentFrequencyMap[code]
+      const frequencyScore = frequency / maxFrequency
+      const omissionScore = omission / maxOmission
+      const recentHeatScore = recentHeat / maxRecentFrequency
+      // 热冷平衡：既不过热也不过冷，倾向于让冷热信号接近，避免极端扎堆。
+      const balanceScore = 1 - Math.abs(frequencyScore - omissionScore)
+      const weightedScore = Number(
+        (
+          balanceScore * recommendWeights.balance +
+          frequencyScore * recommendWeights.frequency +
+          recentHeatScore * recommendWeights.recentHeat +
+          omissionScore * recommendWeights.omission
+        ).toFixed(6)
+      )
+      // console.log('🚀 ~ buildRecommendStats ~ weightedScore:', weightedScore)
 
       return {
         code,
         frequency,
         omission,
-        score,
+        recentHeat,
+        balanceScore,
+        weightedScore,
       }
     })
-    .sort((a, b) => b.score - a.score || b.frequency - a.frequency || Number(a.code) - Number(b.code))
+    .sort((a, b) => b.weightedScore - a.weightedScore || b.frequency - a.frequency || Number(a.code) - Number(b.code))
 }
 
 /**
@@ -447,25 +488,31 @@ const frontRecommendStats = computed(() => buildRecommendStats({ total: 35, star
 const backRecommendStats = computed(() => buildRecommendStats({ total: 12, start: 5, end: 7 }))
 
 /**
- * 从候选池中按偏移量取出一组不重复号码。
- * @param {Array<{ code: string }>} candidates 候选号码池
+ * 从候选池中按权重随机抽取一组不重复号码。
+ * 抽取概率与 `weightedScore` 成正比。
+ * @param {Array<{ code: string, weightedScore: number }>} candidates 候选号码池
  * @param {number} count 需要抽取的号码数量
- * @param {number} offset 起始偏移
- * @param {number} step 步长
  * @returns {string[]}
  */
-const pickRecommendCodes = (candidates, count, offset, step) => {
+const pickRecommendCodes = (candidates, count) => {
+  const pool = [...candidates]
   const picked = []
-  let cursor = offset
-  let attempts = 0
 
-  while (picked.length < count && attempts < candidates.length * 4) {
-    const item = candidates[cursor % candidates.length]
-    if (item && !picked.includes(item.code)) {
-      picked.push(item.code)
+  while (picked.length < count && pool.length) {
+    const totalWeight = pool.reduce((sum, item) => sum + Math.max(item.weightedScore, 0.0001), 0)
+    let random = Math.random() * totalWeight
+    let pickedIndex = 0
+
+    for (let index = 0; index < pool.length; index += 1) {
+      random -= Math.max(pool[index].weightedScore, 0.0001)
+      if (random <= 0) {
+        pickedIndex = index
+        break
+      }
     }
-    cursor += step
-    attempts += 1
+
+    const [item] = pool.splice(pickedIndex, 1)
+    if (item) picked.push(item.code)
   }
 
   return picked.sort((a, b) => Number(a) - Number(b))
@@ -473,18 +520,28 @@ const pickRecommendCodes = (candidates, count, offset, step) => {
 
 /**
  * 推荐号码结果。
- * 生成 5 组：前区 5 个号码 + 后区 2 个号码。
+ * 生成 1 组：前区 5 个号码 + 后区 2 个号码。
  */
-const recommendedGroups = computed(() => {
-  const frontPool = frontRecommendStats.value.slice(0, 18)
-  const backPool = backRecommendStats.value.slice(0, 8)
+const recommendedGroups = ref([])
 
-  return Array.from({ length: 5 }, (_, index) => ({
-    label: `第 ${index + 1} 组`,
-    front: pickRecommendCodes(frontPool, 5, index * 2, 3),
-    back: pickRecommendCodes(backPool, 2, index, 2),
-  }))
-})
+/**
+ * 生成当前推荐号码结果。
+ * 在筛选区间变化时重新执行一次加权随机抽样，避免渲染过程中的重复随机抖动。
+ */
+const generateRecommendedGroups = () => {
+  if (!listFormat.value.length) {
+    recommendedGroups.value = []
+    return
+  }
+
+  recommendedGroups.value = [
+    {
+      label: '推荐方案',
+      front: pickRecommendCodes(frontRecommendStats.value, 5),
+      back: pickRecommendCodes(backRecommendStats.value, 2),
+    },
+  ]
+}
 
 /**
  * 将一组推荐号码格式化为可复制文本。
@@ -825,25 +882,34 @@ const updateCharts = () => {
 }
 
 /**
- * 窗口尺寸变化时自适应
+ * 当前数据区间的起止期号。
+ * 由于传入记录的展示顺序不一定固定，因此这里通过数值排序统一求出最早期号和最新期号。
  */
-const resizeCharts = () => {
-  blueChart?.resize()
-  redChart?.resize()
-}
+const periodRange = computed(() => {
+  if (!listFormat.value.length) return null
+  const sortedRecords = listFormat.value
+  return {
+    start: sortedRecords[0]?.lotteryDrawNum || '',
+    end: sortedRecords[sortedRecords.length - 1]?.lotteryDrawNum || '',
+  }
+})
+
+const last50List = computed(() => {
+  if (!listFormat.value.length) return []
+
+  return listFormat.value.slice(0, 10)
+})
 
 onMounted(async () => {
   await nextTick()
-  // 初始化：默认筛选最近100期
-  handleQuickFilter(100)
+  // 初始化：默认分析全部数据
+  generateRecommendedGroups()
 
   initCharts()
   updateCharts()
-  window.addEventListener('resize', resizeCharts)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resizeCharts)
   blueChart?.dispose()
   redChart?.dispose()
   blueChart = null
@@ -851,6 +917,8 @@ onBeforeUnmount(() => {
 })
 
 watch(listFormat, async () => {
+  generateRecommendedGroups()
+
   // 过滤条件变化会触发重算 map；等待 DOM 稳定后更新图表
   await nextTick()
   initCharts()
@@ -957,10 +1025,28 @@ h3 {
 }
 
 .recommend-note {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   color: #909399;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.recommend-weight-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.recommend-weight-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f4f8ff;
+  border: 1px solid #dbe8ff;
+  color: #5b6b8a;
+  font-size: 12px;
 }
 
 .recommend-grid {
